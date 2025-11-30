@@ -1,0 +1,141 @@
+package handlers
+
+import (
+	d "auth-demo/internal/auth-land/auth/domain"
+	auitf "auth-demo/internal/auth-land/auth/interfaces"
+	c_at "auth-demo/internal/common/atoms"
+	m "auth-demo/internal/auth-land/auth-signature/middleware"
+
+	"net/http"
+	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
+)
+
+type AuthHandler struct {
+	s auitf.AuthServiceITF
+}
+
+func NewAuthHandler(sv auitf.AuthServiceITF) *AuthHandler {
+	return &AuthHandler{s: sv}
+}
+
+func (h *AuthHandler) Create(gctx *gin.Context) {
+	var req struct {
+		Email    string `json:"email" binding:"required,email"`
+		Password string `json:"password" binding:"required,min=8,max=25"`
+	}
+
+	if err := gctx.ShouldBindJSON(&req); err != nil {
+		err = c_at.AbortAndBuildErrLogAtom(
+			gctx,
+			http.StatusBadRequest,
+			"(H) Invalid body request or values.",
+			"Invalid body request")
+		c_at.FeedErrLogToFile(err)
+		return
+	}
+
+	err := h.s.Create(gctx, &d.Auth{Email: req.Email, Password: req.Password})
+	if err != nil {
+		c_at.FeedErrLogToFile(err)
+		return
+	}
+
+	c_at.RespAtom(gctx, http.StatusCreated, "(*) Authentication created.")
+}
+
+func (h *AuthHandler) Login(gctx *gin.Context) {
+	var req struct {
+		Email    string `json:"email" binding:"required,email"`
+		Password string `json:"password" binding:"required,min=8,max=25"`
+	}
+
+	if err := gctx.ShouldBindJSON(&req); err != nil {
+		err = c_at.AbortAndBuildErrLogAtom(
+			gctx,
+			http.StatusBadRequest,
+			"(H) Invalid body request or values.",
+			"Invalid body request")
+		c_at.FeedErrLogToFile(err)
+		return
+	}
+
+	auth := &d.Auth{Email: req.Email, Password: req.Password}
+	err := h.s.Comparate(gctx, auth)
+	if err != nil {
+		c_at.FeedErrLogToFile(err)
+		return
+	}
+
+	claims := &m.Claims{ UUID: auth.UUID, Role: auth.Role }
+	accessToken, err := m.GenerateJWT(gctx, claims, false)
+	if err != nil {
+		c_at.FeedErrLogToFile(err)
+		return
+	}
+
+	refreshToken, err := m.GenerateJWT(gctx, claims, true)
+	if err != nil {
+		c_at.FeedErrLogToFile(err)
+		return
+	}
+
+	gctx.SetCookie("access_token", accessToken, int(m.AccessTokenTTL.Seconds()), "/", "", false, true)
+	gctx.SetCookie("refresh_token", refreshToken, int(m.RefreshTokenTTL.Seconds()), "/", "", false, true)
+
+	c_at.RespAtom(gctx, http.StatusOK, "(*) Login successful.")
+}
+
+func (h *AuthHandler) Refresh(gctx *gin.Context) {
+	refreshToken, err := gctx.Cookie("refresh_token")
+	if err != nil {
+		err = c_at.AbortAndBuildErrLogAtom(
+			gctx,
+			http.StatusUnauthorized,
+			"(H) Missing refresh token.",
+			"Missing refresh token")
+		c_at.FeedErrLogToFile(err)
+		return
+	}
+
+	claims := &m.Claims{}
+	token, err := jwt.ParseWithClaims(refreshToken, claims, func(t *jwt.Token) (any, error) {
+		return m.RefreshSecret, nil
+	})
+
+	if err != nil || !token.Valid {
+		err = c_at.AbortAndBuildErrLogAtom(
+			gctx,
+			http.StatusUnauthorized,
+			"(H) Invalid refresh token.",
+			"Invalid refresh token")
+		c_at.FeedErrLogToFile(err)
+		return
+	}
+
+	newAccessToken, err := m.GenerateJWT(gctx, claims, false)
+	if err != nil {
+		c_at.FeedErrLogToFile(err)
+		return
+	}
+
+	gctx.SetCookie("access_token", newAccessToken, int(m.AccessTokenTTL.Seconds()), "/", "", false, true)
+
+	c_at.RespAtom(gctx, http.StatusOK, "(*) Access token refreshed.")
+}
+
+func (h *AuthHandler) GetByID(gctx *gin.Context) error {
+	return nil
+}
+
+func (h *AuthHandler) Fetch(gctx *gin.Context) error  {
+	return nil
+}
+
+func (h *AuthHandler) Update(gctx *gin.Context, data *d.Auth) error {
+	return nil
+}
+
+func (h *AuthHandler) Delete(gctx *gin.Context) error {
+	return nil
+}
