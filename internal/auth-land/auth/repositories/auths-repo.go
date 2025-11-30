@@ -80,11 +80,7 @@ func (a *AuthRepository) GetByEmail(gctx *gin.Context, data *d.Auth) error {
 
 	if err != nil {
 		if err == sql.ErrNoRows {
-			err = c_at.AbortAndBuildErrLogAtom(
-				gctx,
-				http.StatusUnauthorized,
-				"(R) Authentication not found.",
-				fmt.Sprintf("Authentication of %s not found", data.Email))
+			err = fmt.Errorf("ERR_EMAIL_NOT_FOUND")
 			return err
 		}
 

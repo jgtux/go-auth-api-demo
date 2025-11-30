@@ -37,6 +37,13 @@ func (s *AuthService) Comparate(gctx *gin.Context, data *d.Auth) error {
 
 	err := s.r.GetByEmail(gctx, auth)
 	if err != nil {
+		if err.Error() == "ERR_EMAIL_NOT_FOUND" {
+			err = c_at.AbortAndBuildErrLogAtom(
+				gctx,
+				http.StatusUnauthorized,
+				"(S) Invalid credentials.",
+				fmt.Sprintf("Authentication of %s not found", data.Email))
+		}
 		return err
 	}
 
